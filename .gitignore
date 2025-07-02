@@ -1,0 +1,26 @@
+# Do NOT upload any of these to GitHub
+.env
+.env.*
+*.key
+*.sqlite
+*.db
+*.bak
+*.log
+*.pyc
+__pycache__/
+.ipynb_checkpoints/
+transactions/
+extracted_transactions/
+*.csv
+*.pdf
+*.xlsx
+last_balance*.json
+processed_files.json
+gemini_memory.json
+secret_*.json
+*.zip
+*.tar.gz
+
+# VSCode & Colab
+.vscode/
+.colab/
