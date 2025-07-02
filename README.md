@@ -48,7 +48,7 @@ yaml
 ## 🏃‍♀️ How To Run
 
 1. **Clone this repo**
-2. **Install requirements** (`pip install -r requirements.txt`)
+2. **Install requirements** (requirements.txt)
 3. **Set up your `.env` file**
 4. **Place your bank statements (PDF/XLSX) in `/transactions` folder**
 5. **Run pipeline scripts in order:**
