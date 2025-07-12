@@ -329,7 +329,16 @@ def extract_db_statement(pdf_path):
             m_year_payee = re.match(r'(\d{4})\s+\d{4}\s+(.+)', payee_line)
             if dd_mm and m_year_payee:
                 year = m_year_payee.group(1)
-                booking_date = f"{year}-{dd_mm[:2]}-{dd_mm[3:5]}"
+                day = dd_mm[:2]
+                month = dd_mm[3:5]
+                try:
+                  # Always output as yyyy-mm-dd 00:00:00
+                  booking_date = f"{year}-{month}-{day} 00:00:00"
+                  # You can also use datetime to double check
+                  booking_date = pd.to_datetime(booking_date, format="%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d 00:00:00")
+                except Exception as e:
+                  print(f"[WARNING] Invalid date parts: {year=}, {month=}, {day=}: {e}")
+                  booking_date = ""
                 payee = m_year_payee.group(2).strip()
             else:
                 booking_date = ""
@@ -410,7 +419,7 @@ def extract_barclays_excel(excel_path):
 
     # Map columns
         # Map columns
-    df["Booking Date"] = pd.to_datetime(df["Buchungsdatum"], errors="coerce")
+    df["Booking Date"] = pd.to_datetime(df["Buchungsdatum"].astype(str).str.strip(),errors="coerce", dayfirst=True).dt.strftime("%Y-%m-%d 00:00:00")
     df["Reference Account"] = iban
     df["Reference Account Name"] = meta.get("Kontoname", "Barclays Visa")
 
