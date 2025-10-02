@@ -1,6 +1,6 @@
 # Kubera Finance App
 
-**End-to-end Bank Statement ETL Pipeline — Data Engineering Project**
+**End-to-end Bank Statement ETL Pipeline - Data Engineering Project**
 
 ![Kubera Logo](https://i.postimg.cc/rwFKCB0K/kubera-round-icon-transparent.png)
 
