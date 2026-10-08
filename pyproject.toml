@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kubera-finance"
+version = "2.0.0"
+description = "Bank statements (DKB, N26, Deutsche Bank, Barclays) to categorised transactions in Supabase"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Pavatharini Muthukkumar" }]
+dependencies = [
+    "pandas>=2.2",
+    "pdfplumber>=0.11",
+    "openpyxl>=3.1",
+    "python-dotenv>=1.0",
+    "google-genai>=1.0",
+]
+
+[project.optional-dependencies]
+supabase = ["supabase>=2.0"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+kubera = "kubera.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["kubera*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

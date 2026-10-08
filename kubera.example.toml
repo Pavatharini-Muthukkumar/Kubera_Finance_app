@@ -1,0 +1,23 @@
+# Copy to kubera.toml (git-ignored) and fill in your own details.
+# Everything personal lives here, never in the code.
+
+[owner]
+# Your names as banks print them. Transfers between these names, or to one of
+# your own IBANs, are classified as Banking -> Self Transfer and excluded from
+# income/expense totals.
+names = ["Jane Doe"]
+ibans = ["DE89370400440532013000", "DE02120300000000202051"]
+
+[accounts]
+# Optional display names for the dashboard (default: "<BANK> …<last 4 digits>").
+"DE89370400440532013000" = "Main account"
+"DE02120300000000202051" = "Savings"
+
+[cleaning]
+# Extra regexes removed from payee/purpose text before categorisation,
+# e.g. your street address that some banks append to card payments.
+noise_patterns = ['(?i)musterstra(ss|ß)e\s+\d+']
+
+[gemini]
+model = "gemini-2.5-flash"
+batch_size = 40

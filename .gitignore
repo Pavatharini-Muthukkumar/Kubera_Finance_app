@@ -1,6 +1,13 @@
 # Do NOT upload any of these to GitHub
 .env
 .env.*
+!.env.example
+kubera.toml
+.kubera/
+out/
+*.egg-info/
+.venv/
+.pytest_cache/
 *.key
 *.sqlite
 *.db
@@ -14,6 +21,7 @@ extracted_transactions/
 *.csv
 *.pdf
 *.xlsx
+!examples/*.xlsx
 last_balance*.json
 processed_files.json
 gemini_memory.json
