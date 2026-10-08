@@ -12,7 +12,7 @@ Supabase, where the [Kubera dashboard](https://github.com/Pavatharini-Muthukkuma
 
 **Live demo:** upload a statement (or use the built-in synthetic sample) and see every
 booking categorised, with the method that decided it:
-[Open the Kubera demo](#hosting-the-demo-free) *(the hosted link is added once it is deployed; until then run it locally, below)*
+**[Open the Kubera demo](https://kuberafinanceapp.streamlit.app/)**
 
 ![Kubera demo](docs/demo.png)
 *The demo on the synthetic sample, here running without an API key: 9 bookings are
@@ -110,7 +110,8 @@ locally or in Supabase.
 1. Sign in at [share.streamlit.io](https://share.streamlit.io) with GitHub and choose **Create app**.
 2. Repository `Pavatharini-Muthukkumar/Kubera_Finance_app`, branch `main`, main file `demo/app.py`.
 3. Under **Advanced settings → Secrets** add `GEMINI_API_KEY = "..."`.
-4. Deploy, then put the app's URL into the "Open the Kubera demo" link at the top.
+4. Deploy, then put the app's URL into the "Open the Kubera demo" link at the top
+   (this repo's demo runs at https://kuberafinanceapp.streamlit.app/).
 
 The demo caps Gemini at 60 new texts per upload and 1,500 per day, processes uploads in a
 temporary folder that is deleted immediately, and never shares results between visitors.
