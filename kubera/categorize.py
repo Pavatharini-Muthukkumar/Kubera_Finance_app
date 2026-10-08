@@ -86,7 +86,10 @@ class CategoryCache:
         tmp.replace(self.path)  # atomic: a crash never leaves a half-written cache
 
 
-def _ask(generate: Generate, texts: list[str], retries: int = 3) -> dict[int, tuple[str, str]]:
+def _ask(
+    generate: Generate, texts: list[str], retries: int = 3, rejected: list[str] | None = None
+) -> dict[int, tuple[str, str]]:
+    """One batch. Raises the last error when every retry failed; off-table answers count as rejected."""
     prompt = PROMPT.format(
         categories=_category_table(),
         items="\n".join(f"{i}: {t[:300]}" for i, t in enumerate(texts)),
@@ -94,27 +97,50 @@ def _ask(generate: Generate, texts: list[str], retries: int = 3) -> dict[int, tu
     for attempt in range(retries):
         try:
             answer = json.loads(generate(prompt))
+            if isinstance(answer, dict):  # some replies wrap the list: {"transactions": [...]}
+                answer = next((v for v in answer.values() if isinstance(v, list)), [])
             out = {}
             for item in answer:
                 i = int(item.get("id", -1))
                 main, sub = str(item.get("main_category", "")), str(item.get("subcategory", ""))
-                if 0 <= i < len(texts):
-                    out[i] = (main, sub) if is_valid_category(main, sub) else ("", "")
+                if not 0 <= i < len(texts):
+                    continue
+                if main and not is_valid_category(main, sub):
+                    log.warning("Gemini answered %r -> %r for %r: not in the category table", main, sub, texts[i])
+                    if rejected is not None:
+                        rejected.append(f"{texts[i]}: {main} -> {sub}")
+                    main, sub = "", ""
+                out[i] = (main, sub)
             return out
-        except Exception as e:  # network, quota, malformed JSON
+        except Exception as e:  # network, quota, invalid key, malformed JSON
+            if attempt == retries - 1:
+                raise
             wait = 2 ** attempt * 5
             log.warning("Gemini batch failed (%s); retry %d/%d in %ds", e, attempt + 1, retries, wait)
             time.sleep(wait)
     return {}
 
 
-def _ask_all(generate: Generate, texts: list[str], batch_size: int) -> tuple[dict[str, tuple[str, str]], int]:
+def _ask_all(
+    generate: Generate,
+    texts: list[str],
+    batch_size: int,
+    errors: list[str] | None = None,
+    rejected: list[str] | None = None,
+) -> tuple[dict[str, tuple[str, str]], int]:
     answers, calls = {}, 0
     for start in range(0, len(texts), batch_size):
         batch = texts[start : start + batch_size]
-        for i, pair in _ask(generate, batch).items():
-            answers[batch[i]] = pair
         calls += 1
+        try:
+            pairs = _ask(generate, batch, rejected=rejected)
+        except Exception as e:
+            log.error("Gemini batch of %d texts failed: %s", len(batch), e)
+            if errors is not None:
+                errors.append(f"Gemini call failed: {type(e).__name__}: {str(e)[:200]}")
+            continue
+        for i, pair in pairs.items():
+            answers[batch[i]] = pair
     return answers, calls
 
 
@@ -149,9 +175,9 @@ def categorize(
     texts = sorted({t for t in df.loc[open_rows(), "text"] if t and cache.get(t) is None})
     if max_new_texts is not None:
         texts = texts[:max_new_texts]
-    calls = 0
+    calls, errors, rejected = 0, [], []
     if generate is not None and texts:
-        answers, calls = _ask_all(generate, texts, config.gemini_batch_size)
+        answers, calls = _ask_all(generate, texts, config.gemini_batch_size, errors, rejected)
         for text, pair in answers.items():  # unanswered texts stay uncached and are retried next run
             cache.put(text, *pair)
         cache.save()
@@ -164,7 +190,10 @@ def categorize(
 
     counts = df["Categorised By"].replace("", "needs review").value_counts().to_dict()
     log.info("categorised: %s (%d Gemini calls for %d new texts)", counts, calls, len(texts))
-    return mark_excluded(df)
+    df = mark_excluded(df)
+    df.attrs["gemini_errors"] = errors
+    df.attrs["gemini_rejected"] = rejected
+    return df
 
 
 def rule_agreement(df: pd.DataFrame, config: Config, generate: Generate) -> pd.DataFrame:

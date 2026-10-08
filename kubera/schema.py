@@ -49,7 +49,7 @@ CATEGORIES: dict[str, list[str]] = {
     "Groceries": ["Supermarket", "International Grocery", "Drugstore"],
     "Dining Out": ["Restaurant", "Fast Food", "Cafe", "Delivery"],
     "Car": ["Fuel", "Parking", "Car Wash", "Maintenance", "Car Insurance"],
-    "Health": ["Pharmacy", "Health Insurance", "Private Insurance"],
+    "Health": ["Pharmacy", "Doctor", "Dentist", "Therapy", "Health Insurance", "Private Insurance"],
     "Housing": ["Rent", "Gas", "Electricity", "Internet & Phone", "Broadcast Fee (GEZ)", "Furniture", "Renovation"],
     "Savings": ["Investments", "Savings Account"],
     "Shopping": ["Clothing", "Electronics", "Online Shopping", "Household", "Other Shopping"],

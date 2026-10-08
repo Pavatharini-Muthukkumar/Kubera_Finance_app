@@ -71,5 +71,11 @@ def run(
     tx = harmonize([r.transactions for r in results], config)
     dropped = tx.attrs.get("duplicates_dropped", 0)
     tx = categorize(tx, config, generate, max_new_texts)
+    warnings += tx.attrs.get("gemini_errors", [])
+    if tx.attrs.get("gemini_rejected"):
+        warnings.append(
+            f"Gemini gave {len(tx.attrs['gemini_rejected'])} answer(s) outside the category table "
+            "(left for review): " + "; ".join(tx.attrs["gemini_rejected"][:5])
+        )
     tx = detect_contracts(tx)
     return RunResult(tx, accounts_table(results), skipped, warnings, dropped)

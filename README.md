@@ -41,7 +41,7 @@ flowchart LR
 | **Clean** | One schema for all banks; ISO week, month, quarter; text stripped of amounts, IBANs and noise. |
 | **De-duplicate** | Every booking gets a stable id, so overlapping statements never double-count, while two identical purchases on one day are both kept. |
 | **Self transfers** | Money moved between your own accounts (by IBAN or by your name) is excluded from income and spending, decided by rule before any model call. |
-| **Categorise (hybrid)** | Unmistakable merchants (REWE, dm, Deutsche Bahn, Netflix: about 30 patterns) are decided by **rule**: free, instant, deterministic. Everything else goes to **Gemini**: about 40 texts per call, answers checked against a fixed table (14 main categories, 58 subcategories), anything outside it rejected and queued for review, results cached. Every booking records who decided it in `Categorised By`. |
+| **Categorise (hybrid)** | Unmistakable merchants (REWE, dm, Deutsche Bahn, Netflix: about 30 patterns) are decided by **rule**: free, instant, deterministic. Everything else goes to **Gemini**: about 40 texts per call, answers checked against a fixed table (14 main categories, 61 subcategories), anything outside it rejected and queued for review, results cached. Every booking records who decided it in `Categorised By`. |
 | **Contracts** | Payments to the same counterparty on a weekly, monthly, quarterly or yearly grid, with a steady amount. One late payment does not hide a contract. |
 | **Dashboard data** | SQL views compute every number the dashboard shows: monthly totals, category spending, balances, contracts and the review queue. |
 

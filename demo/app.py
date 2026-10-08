@@ -42,7 +42,7 @@ def _gemini_key() -> str | None:
         key = st.secrets.get("GEMINI_API_KEY")
     except Exception:  # no secrets file at all
         key = None
-    return key or os.getenv("GEMINI_API_KEY")
+    return (key or os.getenv("GEMINI_API_KEY") or "").strip() or None
 
 
 def _budget() -> int:
@@ -72,7 +72,10 @@ def analyse(name: str, data: bytes, use_gemini: bool, budget: int) -> tuple[pd.D
             os.environ["GEMINI_API_KEY"] = _gemini_key()
             generate = gemini_generator(config.gemini_model)
         result = run(inbox, config, generate, max_new_texts=budget)
-        return result.transactions, result.accounts, result.skipped + result.warnings
+        notes = result.skipped + result.warnings
+        if generate is not None:  # never echo the key, whatever an error message contains
+            notes = [n.replace(_gemini_key(), "***") for n in notes]
+        return result.transactions, result.accounts, notes
 
 
 # ---------------------------------------------------------------------------- page

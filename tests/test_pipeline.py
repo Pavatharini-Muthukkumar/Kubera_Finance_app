@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pandas as pd
 
@@ -103,6 +104,7 @@ def test_hybrid_rules_first_then_gemini_and_every_row_says_who_decided(config):
     assert by.loc["Fahrradladen Meier", "Subcategory"] == "Bicycle"
     assert by.loc["Mystery Shop", "needs_manual_input"]           # invented pair rejected
     assert len(prompts) == 1                                       # one batch
+    assert out.attrs["gemini_rejected"] == ["Mystery Shop: Shopping -> Spaceships"]  # reported, not silent
     assert "REWE" not in prompts[0] and "Spotify" not in prompts[0]  # rules never reach Gemini
 
     # second run: Gemini's answers come from the cache, no call at all
@@ -125,6 +127,28 @@ def test_failed_batches_are_not_cached(config, monkeypatch):
     out = categorize(df, config, lambda p: "not json")
     assert out.loc[0, "needs_manual_input"]
     assert CategoryCache(config.state_dir / "category_cache.json").get("Fahrradladen Meier") is None
+    assert out.attrs["gemini_errors"][0].startswith("Gemini call failed: JSONDecodeError")
+
+
+def test_gemini_failure_reaches_the_run_warnings(config, tmp_path, monkeypatch):
+    """A bad key or quota error must show up in the demo, not hide behind 'needs review'."""
+    monkeypatch.setattr("kubera.categorize.time.sleep", lambda s: None)
+
+    def broken(prompt):
+        raise PermissionError("API key not valid")
+
+    inbox = tmp_path / "in"
+    inbox.mkdir()
+    (inbox / "barclays_demo.xlsx").write_bytes((Path(__file__).parents[1] / "examples/barclays_demo.xlsx").read_bytes())
+    result = run(inbox, config, broken)
+    assert any("API key not valid" in w for w in result.warnings)
+
+
+def test_wrapped_json_answer_is_accepted(config):
+    df = harmonize([frame([tx("2025-05-01", -40.0, "Fahrradladen Meier")])], config)
+    reply = json.dumps({"transactions": [{"id": 0, "main_category": "Mobility", "subcategory": "Bicycle"}]})
+    out = categorize(df, config, lambda p: reply)
+    assert out.loc[0, "Categorised By"] == "gemini"
 
 
 def test_rule_agreement_reports_where_rules_and_gemini_differ(config):
