@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from kubera.categorize import CategoryCache, categorize
 from kubera.contracts import detect_contracts
@@ -283,11 +284,33 @@ def test_overloaded_model_falls_back_to_the_next_at_once(monkeypatch):
             asked.append(model)
             if model == "busy":
                 raise errors.ServerError(503, {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}})
+            if config.thinking_config is not None:
+                raise errors.ClientError(400, {"error": {"code": 400, "message": "thinking_level is not supported"}})
             return type("R", (), {"text": "[]"})()
 
     monkeypatch.setattr(genai, "Client", lambda **kw: type("C", (), {"models": Models()})())
     monkeypatch.setenv("GEMINI_API_KEY", "test")
     generate = gemini_generator("busy, spare")
-    assert generate("p") == "[]" and asked == ["busy", "spare"]
+    assert generate("p") == "[]" and asked == ["busy", "spare", "spare"]  # 2nd 'spare' = without thinking level
     generate("p")
     assert asked[-1] == "spare"  # the model that answered is tried first next time
+
+
+def test_bad_key_is_not_retried(monkeypatch):
+    from google import genai
+    from google.genai import errors
+
+    from kubera.categorize import GeminiUnavailable, _ask, gemini_generator
+
+    asked = []
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            asked.append(model)
+            raise errors.ClientError(400, {"error": {"code": 400, "message": "API key not valid"}})
+
+    monkeypatch.setattr(genai, "Client", lambda **kw: type("C", (), {"models": Models()})())
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    with pytest.raises(GeminiUnavailable):
+        _ask(gemini_generator("a, b"), ["x"])
+    assert asked == ["a"]  # no fallback, no retry: one call, instant error

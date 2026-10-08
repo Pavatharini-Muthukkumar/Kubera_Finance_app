@@ -44,30 +44,53 @@ def _category_table() -> str:
     return "\n".join(f"- {main} -> {', '.join(subs)}" for main, subs in CATEGORIES.items())
 
 
-def gemini_generator(model: str, timeout_s: int = 45) -> Generate:
+class GeminiUnavailable(RuntimeError):
+    """Every model in the chain failed; retrying the same batch would only wait longer."""
+
+
+def gemini_generator(model: str, timeout_s: int = 25, deadline_s: int = 60) -> Generate:
     """``model`` may list fallbacks, comma-separated: an overloaded (503), rate-limited (429)
-    or retired (404) model hands over to the next one at once instead of waiting."""
+    or retired (404) model hands over to the next one at once. Each call is capped at
+    ``timeout_s`` and one prompt at ``deadline_s`` over all models, so a page never hangs."""
     from google import genai
     from google.genai import errors, types
 
     models = [m.strip() for m in model.split(",") if m.strip()]
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options=types.HttpOptions(timeout=timeout_s * 1000))
-    cfg = types.GenerateContentConfig(response_mime_type="application/json", temperature=0)
+    plain = types.GenerateContentConfig(response_mime_type="application/json", temperature=0)
+    fast = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        temperature=0,
+        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),  # picking a label needs little thought
+    )
+    no_thinking_level: set[str] = set()  # models that reject the setting
+
+    def call(name: str, prompt: str) -> str:
+        if name not in no_thinking_level:
+            try:
+                return client.models.generate_content(model=name, contents=prompt, config=fast).text
+            except errors.ClientError as e:
+                if e.code != 400 or "think" not in str(e).lower():
+                    raise
+                no_thinking_level.add(name)
+        return client.models.generate_content(model=name, contents=prompt, config=plain).text
 
     def generate(prompt: str) -> str:
-        last: Exception | None = None
-        for i, name in enumerate(models):
+        start, last = time.monotonic(), None
+        for i, name in enumerate(list(models)):
+            if time.monotonic() - start > deadline_s:
+                break
             try:
-                text = client.models.generate_content(model=name, contents=prompt, config=cfg).text
+                text = call(name, prompt)
                 if i:  # the one that answered goes first next time
                     models.insert(0, models.pop(i))
                 return text
-            except errors.APIError as e:
-                if e.code not in (404, 429, 500, 503, 504):
-                    raise
-                log.warning("Gemini model %s unavailable (%s), trying the next one", name, e.code)
+            except Exception as e:  # overloaded, rate-limited, retired, timed out
+                if isinstance(e, errors.ClientError) and e.code not in (404, 429):
+                    raise GeminiUnavailable(str(e)) from e  # bad key or request: no model will do better
+                log.warning("Gemini model %s failed (%s), trying the next one", name, str(e)[:120])
                 last = e
-        raise last
+        raise GeminiUnavailable(f"no Gemini model answered: {last}") from last
 
     return generate
 
@@ -127,7 +150,9 @@ def _ask(
                     main, sub = "", ""
                 out[i] = (main, sub)
             return out
-        except Exception as e:  # network, quota, invalid key, malformed JSON
+        except GeminiUnavailable:
+            raise  # the model chain already tried everything
+        except Exception as e:  # malformed JSON, flaky network
             if attempt == retries - 1:
                 raise
             wait = 2 ** attempt * 2
