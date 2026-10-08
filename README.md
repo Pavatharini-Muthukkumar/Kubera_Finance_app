@@ -110,6 +110,8 @@ locally or in Supabase.
 1. Sign in at [share.streamlit.io](https://share.streamlit.io) with GitHub and choose **Create app**.
 2. Repository `Pavatharini-Muthukkumar/Kubera_Finance_app`, branch `main`, main file `demo/app.py`.
 3. Under **Advanced settings → Secrets** add `GEMINI_API_KEY = "..."`.
+   Optional: `KUBERA_GEMINI_MODEL = "..."` switches the model without a code change
+   (Google retires model names; the default is `gemini-3.8-flash`).
 4. Deploy, then put the app's URL into the "Open the Kubera demo" link at the top
    (this repo's demo runs at https://kuberafinanceapp.streamlit.app/).
 

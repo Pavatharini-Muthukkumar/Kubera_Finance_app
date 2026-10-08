@@ -19,5 +19,5 @@ ibans = ["DE89370400440532013000", "DE02120300000000202051"]
 noise_patterns = ['(?i)musterstra(ss|ß)e\s+\d+']
 
 [gemini]
-model = "gemini-2.5-flash"
+model = "gemini-3.8-flash"
 batch_size = 40

@@ -37,12 +37,16 @@ def _usage() -> dict:
     return {}
 
 
-def _gemini_key() -> str | None:
+def _secret(name: str) -> str | None:
     try:
-        key = st.secrets.get("GEMINI_API_KEY")
+        value = st.secrets.get(name)
     except Exception:  # no secrets file at all
-        key = None
-    return (key or os.getenv("GEMINI_API_KEY") or "").strip() or None
+        value = None
+    return (value or os.getenv(name) or "").strip() or None
+
+
+def _gemini_key() -> str | None:
+    return _secret("GEMINI_API_KEY")
 
 
 def _budget() -> int:
@@ -70,7 +74,7 @@ def analyse(name: str, data: bytes, use_gemini: bool, budget: int) -> tuple[pd.D
         generate = None
         if use_gemini and budget > 0:
             os.environ["GEMINI_API_KEY"] = _gemini_key()
-            generate = gemini_generator(config.gemini_model)
+            generate = gemini_generator(_secret("KUBERA_GEMINI_MODEL") or config.gemini_model)
         result = run(inbox, config, generate, max_new_texts=budget)
         notes = result.skipped + result.warnings
         if generate is not None:  # never echo the key, whatever an error message contains
