@@ -44,15 +44,30 @@ def _category_table() -> str:
     return "\n".join(f"- {main} -> {', '.join(subs)}" for main, subs in CATEGORIES.items())
 
 
-def gemini_generator(model: str) -> Generate:
+def gemini_generator(model: str, timeout_s: int = 45) -> Generate:
+    """``model`` may list fallbacks, comma-separated: an overloaded (503), rate-limited (429)
+    or retired (404) model hands over to the next one at once instead of waiting."""
     from google import genai
-    from google.genai import types
+    from google.genai import errors, types
 
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    models = [m.strip() for m in model.split(",") if m.strip()]
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options=types.HttpOptions(timeout=timeout_s * 1000))
     cfg = types.GenerateContentConfig(response_mime_type="application/json", temperature=0)
 
     def generate(prompt: str) -> str:
-        return client.models.generate_content(model=model, contents=prompt, config=cfg).text
+        last: Exception | None = None
+        for i, name in enumerate(models):
+            try:
+                text = client.models.generate_content(model=name, contents=prompt, config=cfg).text
+                if i:  # the one that answered goes first next time
+                    models.insert(0, models.pop(i))
+                return text
+            except errors.APIError as e:
+                if e.code not in (404, 429, 500, 503, 504):
+                    raise
+                log.warning("Gemini model %s unavailable (%s), trying the next one", name, e.code)
+                last = e
+        raise last
 
     return generate
 
@@ -115,7 +130,7 @@ def _ask(
         except Exception as e:  # network, quota, invalid key, malformed JSON
             if attempt == retries - 1:
                 raise
-            wait = 2 ** attempt * 5
+            wait = 2 ** attempt * 2
             log.warning("Gemini batch failed (%s); retry %d/%d in %ds", e, attempt + 1, retries, wait)
             time.sleep(wait)
     return {}

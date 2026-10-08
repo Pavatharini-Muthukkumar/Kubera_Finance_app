@@ -111,7 +111,9 @@ locally or in Supabase.
 2. Repository `Pavatharini-Muthukkumar/Kubera_Finance_app`, branch `main`, main file `demo/app.py`.
 3. Under **Advanced settings → Secrets** add `GEMINI_API_KEY = "..."`.
    Optional: `KUBERA_GEMINI_MODEL = "..."` switches the model without a code change
-   (Google retires model names; the default is `gemini-3.8-flash`).
+   (Google retires model names). The default is a fallback chain,
+   `gemini-3.8-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite`: if one model is
+   overloaded or retired, the next answers straight away.
 4. Deploy, then put the app's URL into the "Open the Kubera demo" link at the top
    (this repo's demo runs at https://kuberafinanceapp.streamlit.app/).
 

@@ -14,13 +14,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+# tried in order: an overloaded or retired model hands over to the next
+DEFAULT_GEMINI_MODELS = "gemini-3.8-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite"
+
+
 @dataclass
 class Config:
     owner_names: list[str] = field(default_factory=list)
     owner_ibans: set[str] = field(default_factory=set)
     account_names: dict[str, str] = field(default_factory=dict)
     noise_patterns: list[str] = field(default_factory=list)
-    gemini_model: str = "gemini-3.8-flash"
+    gemini_model: str = DEFAULT_GEMINI_MODELS
     gemini_batch_size: int = 40
     state_dir: Path = Path(".kubera")
 
@@ -55,7 +59,7 @@ def load_config(path: str | os.PathLike | None = None) -> Config:
         owner_ibans={re.sub(r"\s+", "", i).upper() for i in owner.get("ibans", [])},
         account_names={re.sub(r"\s+", "", k).upper(): v for k, v in data.get("accounts", {}).items()},
         noise_patterns=list(data.get("cleaning", {}).get("noise_patterns", [])),
-        gemini_model=os.getenv("KUBERA_GEMINI_MODEL", gemini.get("model", "gemini-3.8-flash")),
+        gemini_model=os.getenv("KUBERA_GEMINI_MODEL", gemini.get("model", DEFAULT_GEMINI_MODELS)),
         gemini_batch_size=int(gemini.get("batch_size", 40)),
         state_dir=Path(os.getenv("KUBERA_STATE_DIR", data.get("state_dir", ".kubera"))),
     )

@@ -268,3 +268,26 @@ def test_source_file_is_a_name_not_a_local_path(config, tmp_path):
     pd.DataFrame([["IBAN", "DE75512108001245126199"], ["Referenznummer", "Buchungsdatum", "Beschreibung", "Betrag"],
                   ["R1", "10.06.2025", "AMAZON EU", "-49,99"]]).to_excel(inbox / "b.xlsx", header=False, index=False)
     assert run(inbox, config).transactions["Source File"].tolist() == ["b.xlsx"]
+
+
+def test_overloaded_model_falls_back_to_the_next_at_once(monkeypatch):
+    from google import genai
+    from google.genai import errors
+
+    from kubera.categorize import gemini_generator
+
+    asked = []
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            asked.append(model)
+            if model == "busy":
+                raise errors.ServerError(503, {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}})
+            return type("R", (), {"text": "[]"})()
+
+    monkeypatch.setattr(genai, "Client", lambda **kw: type("C", (), {"models": Models()})())
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    generate = gemini_generator("busy, spare")
+    assert generate("p") == "[]" and asked == ["busy", "spare"]
+    generate("p")
+    assert asked[-1] == "spare"  # the model that answered is tried first next time
