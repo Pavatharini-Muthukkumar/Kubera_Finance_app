@@ -109,7 +109,7 @@ def apply_self_transfers(df: pd.DataFrame, config: Config) -> pd.DataFrame:
     is_self = df["IBAN"].isin(own)
     if owner is not None:
         is_self |= df["Payee"].str.contains(owner, na=False)
-    df.loc[is_self, ["Main Category", "Subcategory"]] = ["Banking", "Self Transfer"]
+    df.loc[is_self, ["Main Category", "Subcategory", "Categorised By"]] = ["Banking", "Self Transfer", "own-account rule"]
     df.loc[is_self, "Internal Transfer"] = True
     return mark_excluded(df)
 

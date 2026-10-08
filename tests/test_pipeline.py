@@ -63,44 +63,94 @@ def test_self_transfers_by_iban_and_by_name_are_excluded(config):
 
 # ---- categorisation -------------------------------------------------------
 
-def test_categorize_batches_validates_and_caches(config):
+def _fake_gemini(answers, prompts):
+    """A stand-in for Gemini that answers from a dict and records each prompt."""
+    def generate(prompt):
+        prompts.append(prompt)
+        body = prompt.split("Transactions (id: text):\n")[1].split("\n\n")[0]
+        items = [line.split(": ", 1) for line in body.splitlines()]
+        return json.dumps([
+            {"id": int(i), "main_category": answers[t][0], "subcategory": answers[t][1]} for i, t in items
+        ])
+    return generate
+
+
+def test_hybrid_rules_first_then_gemini_and_every_row_says_who_decided(config):
     df = harmonize([frame([
-        tx("2025-05-01", -40.0, "REWE Markt"),
-        tx("2025-05-02", -40.0, "REWE Markt"),          # same text: asked once
-        tx("2025-05-03", -9.99, "Spotify AB"),
-        tx("2025-05-04", -15.0, "Mystery Shop"),
+        tx("2025-05-01", -40.0, "REWE Markt"),               # rule
+        tx("2025-05-02", -9.99, "Spotify AB"),                # rule
+        tx("2025-05-03", -35.0, "Fahrradladen Meier"),        # Gemini
+        tx("2025-05-04", -35.0, "Fahrradladen Meier"),        # same text: asked once
+        tx("2025-05-05", -15.0, "Mystery Shop"),              # Gemini answers outside the table
+        tx("2025-05-06", -500.0, "Savings", iban="DE02120300000000202051"),  # own account
     ])], config)
     prompts = []
+    fake = _fake_gemini({
+        "Fahrradladen Meier": ("Mobility", "Bicycle"),
+        "Mystery Shop": ("Shopping", "Spaceships"),
+    }, prompts)
 
-    def fake(prompt):
-        prompts.append(prompt)
-        items = [line.split(": ", 1) for line in prompt.split("Transactions (id: text):\n")[1].split("\n\n")[0].splitlines()]
-        answer = {
-            "REWE Markt": ("Groceries", "Supermarket"),
-            "Spotify AB": ("Leisure", "Subscription"),
-            "Mystery Shop": ("Shopping", "Spaceships"),     # not an allowed pair -> rejected
-        }
-        return json.dumps([{"id": int(i), "main_category": answer[t][0], "subcategory": answer[t][1]} for i, t in items])
+    out = categorize(df, config, fake)
+    by = out.drop_duplicates("Payee").set_index("Payee")
+    assert by["Categorised By"].to_dict() == {
+        "REWE Markt": "rule",
+        "Spotify AB": "rule",
+        "Fahrradladen Meier": "gemini",
+        "Mystery Shop": "",
+        "Savings": "own-account rule",
+    }
+    assert by.loc["REWE Markt", "Subcategory"] == "Supermarket"
+    assert by.loc["Fahrradladen Meier", "Subcategory"] == "Bicycle"
+    assert by.loc["Mystery Shop", "needs_manual_input"]           # invented pair rejected
+    assert len(prompts) == 1                                       # one batch
+    assert "REWE" not in prompts[0] and "Spotify" not in prompts[0]  # rules never reach Gemini
 
-    out = categorize(df, config, fake).set_index("Payee")
-    assert len(prompts) == 1  # three distinct texts, one batch
-    assert out.loc["Spotify AB", "Main Category"] == "Leisure"
-    assert (out.loc["REWE Markt", "Subcategory"] == "Supermarket").all()
-    assert out.loc["Mystery Shop", "Main Category"] == ""
-    assert out.loc["Mystery Shop", "needs_manual_input"]
+    # second run: Gemini's answers come from the cache, no call at all
+    again = categorize(df, config, lambda p: 1 / 0)
+    assert (again.set_index("Payee").loc["Fahrradladen Meier", "Categorised By"] == "gemini").all()
 
-    # second run: everything comes from the cache, no model call
-    again = categorize(df.assign(**{"Main Category": "", "Subcategory": ""}), config, lambda p: 1 / 0)
-    assert (again.set_index("Payee").loc["REWE Markt", "Subcategory"] == "Supermarket").all()
-    assert CategoryCache(config.state_dir / "category_cache.json").get("Spotify AB") == ["Leisure", "Subscription"]
+
+def test_demo_cap_limits_new_gemini_texts(config):
+    df = harmonize([frame([tx("2025-05-0%d" % i, -1.0, f"Unknown {i}") for i in range(1, 6)])], config)
+    prompts = []
+    fake = _fake_gemini({f"Unknown {i}": ("Shopping", "Other Shopping") for i in range(1, 6)}, prompts)
+    out = categorize(df, config, fake, max_new_texts=2)
+    assert (out["Categorised By"] == "gemini").sum() == 2
+    assert out["needs_manual_input"].sum() == 3
 
 
 def test_failed_batches_are_not_cached(config, monkeypatch):
     monkeypatch.setattr("kubera.categorize.time.sleep", lambda s: None)
-    df = harmonize([frame([tx("2025-05-01", -40.0, "REWE Markt")])], config)
+    df = harmonize([frame([tx("2025-05-01", -40.0, "Fahrradladen Meier")])], config)
     out = categorize(df, config, lambda p: "not json")
     assert out.loc[0, "needs_manual_input"]
-    assert CategoryCache(config.state_dir / "category_cache.json").get("REWE Markt") is None
+    assert CategoryCache(config.state_dir / "category_cache.json").get("Fahrradladen Meier") is None
+
+
+def test_rule_agreement_reports_where_rules_and_gemini_differ(config):
+    from kubera.categorize import rule_agreement
+
+    df = categorize(harmonize([frame([
+        tx("2025-05-01", -40.0, "REWE Markt"),
+        tx("2025-05-02", -9.99, "Spotify AB"),
+    ])], config), config)
+    fake = _fake_gemini({
+        "REWE Markt": ("Groceries", "Supermarket"),
+        "Spotify AB": ("Leisure", "Games"),           # disagrees with the rule
+    }, [])
+    report = rule_agreement(df, config, fake).set_index("text")
+    assert report["agree"].to_dict() == {"REWE Markt": True, "Spotify AB": False}
+    assert report.loc["Spotify AB", "gemini"] == "Leisure → Games"
+
+
+def test_every_rule_points_at_an_allowed_category():
+    from kubera import rules
+    from kubera.schema import is_valid_category
+
+    assert all(is_valid_category(m, s) for _, m, s in rules.RULES)
+    assert rules.match("REWE Markt Erlangen") == ("Groceries", "Supermarket")
+    assert rules.match("Lastschrift Stadtwerke Erlangen") == ("Housing", "Electricity")
+    assert rules.match("Fahrradladen Meier") is None
 
 
 # ---- contracts ------------------------------------------------------------
@@ -173,7 +223,9 @@ def test_run_on_a_barclays_export(config, tmp_path):
     result = run(inbox, config, generate=None)
     assert len(result.transactions) == 2
     assert result.accounts.to_dict("records")[0]["balance"] == -120.5
-    assert result.transactions["needs_manual_input"].all()  # --no-llm and empty cache
+    # no model: the two well-known merchants are still decided, by rule
+    assert result.transactions["Categorised By"].tolist() == ["rule", "rule"]
+    assert result.transactions["Subcategory"].tolist() == ["Online Shopping", "Subscription"]
 
 
 def test_contract_frequencies_are_not_confused():

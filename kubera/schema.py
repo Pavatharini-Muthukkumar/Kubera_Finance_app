@@ -25,6 +25,7 @@ COLUMNS = [
     *EXTRACTED_COLUMNS,
     "Main Category",
     "Subcategory",
+    "Categorised By",  # rule | own-account rule | gemini | "" (still needs a person)
     "Contract",
     "Contract Frequency",
     "Contract ID",

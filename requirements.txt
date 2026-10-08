@@ -1,0 +1,8 @@
+# For the hosted Streamlit demo (Streamlit Community Cloud installs this file).
+# Local development: pip install -e ".[supabase,dev]" instead.
+streamlit>=1.40
+pandas>=2.2
+pdfplumber>=0.11
+openpyxl>=3.1
+python-dotenv>=1.0
+google-genai>=1.0

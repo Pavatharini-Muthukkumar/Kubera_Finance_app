@@ -46,7 +46,12 @@ def accounts_table(results: list[ExtractResult]) -> pd.DataFrame:
     return df.drop_duplicates("iban", keep="last").reset_index(drop=True)
 
 
-def run(input_dir: Path, config: Config, generate: Generate | None = None) -> RunResult:
+def run(
+    input_dir: Path,
+    config: Config,
+    generate: Generate | None = None,
+    max_new_texts: int | None = None,
+) -> RunResult:
     files = sorted(p for p in Path(input_dir).iterdir() if p.suffix.lower() in STATEMENT_SUFFIXES)
     results, skipped, warnings = [], [], []
     for path in files:
@@ -65,6 +70,6 @@ def run(input_dir: Path, config: Config, generate: Generate | None = None) -> Ru
 
     tx = harmonize([r.transactions for r in results], config)
     dropped = tx.attrs.get("duplicates_dropped", 0)
-    tx = categorize(tx, config, generate)
+    tx = categorize(tx, config, generate, max_new_texts)
     tx = detect_contracts(tx)
     return RunResult(tx, accounts_table(results), skipped, warnings, dropped)

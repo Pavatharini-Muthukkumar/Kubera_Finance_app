@@ -1,0 +1,8 @@
+[server]
+maxUploadSize = 5   # MB: statements are small; keeps the public demo cheap
+
+[theme]
+primaryColor = "#005389"
+
+[browser]
+gatherUsageStats = false

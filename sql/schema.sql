@@ -30,6 +30,7 @@ create table if not exists transactions (
     "Source File"                      text,
     "Main Category"                    text,
     "Subcategory"                      text,
+    "Categorised By"                   text,
     "Contract"                         boolean default false,
     "Contract Frequency"               text,
     "Contract ID"                      text,
@@ -46,6 +47,9 @@ create table if not exists transactions (
 );
 
 create index if not exists transactions_month_idx on transactions ("Month");
+
+-- Added in v2.1 (hybrid categorisation); no-op on a fresh table.
+alter table transactions add column if not exists "Categorised By" text;
 
 -- Months that have data, newest first (dropdown options).
 create or replace view v_months as

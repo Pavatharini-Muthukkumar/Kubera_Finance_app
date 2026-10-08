@@ -1,4 +1,4 @@
-"""Gemini categorisation: batched, cached, validated against the category table."""
+"""Hybrid categorisation: merchant rules, then Gemini (batched, cached, validated)."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import Callable
 
 import pandas as pd
 
+from kubera import rules
 from kubera.config import Config
 from kubera.schema import CATEGORIES, is_valid_category
 from kubera.transform import mark_excluded
@@ -107,33 +108,82 @@ def _ask(generate: Generate, texts: list[str], retries: int = 3) -> dict[int, tu
     return {}
 
 
-def categorize(df: pd.DataFrame, config: Config, generate: Generate | None = None) -> pd.DataFrame:
-    """Fill Main Category / Subcategory for rows the rules left empty.
+def _ask_all(generate: Generate, texts: list[str], batch_size: int) -> tuple[dict[str, tuple[str, str]], int]:
+    answers, calls = {}, 0
+    for start in range(0, len(texts), batch_size):
+        batch = texts[start : start + batch_size]
+        for i, pair in _ask(generate, batch).items():
+            answers[batch[i]] = pair
+        calls += 1
+    return answers, calls
 
-    Each distinct text is asked once (cache + de-duplication), in batches.
-    With ``generate=None`` only the cache is used -- the --no-llm mode.
+
+def categorize(
+    df: pd.DataFrame,
+    config: Config,
+    generate: Generate | None = None,
+    max_new_texts: int | None = None,
+) -> pd.DataFrame:
+    """Fill Main Category / Subcategory for every row the own-account rule left empty.
+
+    Hybrid, and every row records which path decided it (``Categorised By``):
+      1. rule   -- a short list of unmistakable merchants (kubera/rules.py)
+      2. gemini -- everything else; each distinct text is asked once, in
+                   batches, and remembered in the cache so a re-run is free
+    With ``generate=None`` only rules and earlier Gemini answers are used.
+    ``max_new_texts`` caps the Gemini calls of one run (the public demo).
     """
-    cache = CategoryCache(config.state_dir / "category_cache.json")
-    todo = df["Main Category"].fillna("") == ""
-    texts = sorted({t for t in df.loc[todo, "text"] if t and cache.get(t) is None})
+    df = df.copy()
+    if "Categorised By" not in df:
+        df["Categorised By"] = ""
 
-    asked = 0
-    if generate is not None:
-        size = config.gemini_batch_size
-        for start in range(0, len(texts), size):
-            batch = texts[start : start + size]
-            answers = _ask(generate, batch)
-            for i, text in enumerate(batch):
-                if i in answers:  # unanswered texts stay uncached and are retried next run
-                    cache.put(text, *answers[i])
-            asked += 1
+    def open_rows():
+        return df.index[df["Main Category"].fillna("") == ""]
+
+    for idx in open_rows():
+        hit = rules.match(df.at[idx, "text"])
+        if hit:
+            df.loc[idx, ["Main Category", "Subcategory", "Categorised By"]] = [*hit, "rule"]
+
+    cache = CategoryCache(config.state_dir / "category_cache.json")
+    texts = sorted({t for t in df.loc[open_rows(), "text"] if t and cache.get(t) is None})
+    if max_new_texts is not None:
+        texts = texts[:max_new_texts]
+    calls = 0
+    if generate is not None and texts:
+        answers, calls = _ask_all(generate, texts, config.gemini_batch_size)
+        for text, pair in answers.items():  # unanswered texts stay uncached and are retried next run
+            cache.put(text, *pair)
         cache.save()
 
-    hits = 0
-    for idx in df.index[todo]:
+    for idx in open_rows():
         cached = cache.get(df.at[idx, "text"] or "")
         if cached:
-            df.loc[idx, ["Main Category", "Subcategory"]] = cached
-            hits += 1
-    log.info("categorised %d rows (%d model calls for %d new texts)", hits, asked, len(texts))
+            source = "gemini" if any(cached) else ""  # Gemini looked and found no fitting category
+            df.loc[idx, ["Main Category", "Subcategory", "Categorised By"]] = [*cached, source]
+
+    counts = df["Categorised By"].replace("", "needs review").value_counts().to_dict()
+    log.info("categorised: %s (%d Gemini calls for %d new texts)", counts, calls, len(texts))
     return mark_excluded(df)
+
+
+def rule_agreement(df: pd.DataFrame, config: Config, generate: Generate) -> pd.DataFrame:
+    """Ask Gemini about every rule-decided text and compare: the rules' audit.
+
+    Returns one row per distinct text with both answers and an ``agree`` flag,
+    so the rules can be defended with a number ("rules and Gemini agree on 97%").
+    """
+    ruled = df[df["Categorised By"] == "rule"]
+    texts = sorted(set(ruled["text"]))
+    answers, _ = _ask_all(generate, texts, config.gemini_batch_size)
+    rows = []
+    for text in texts:
+        rule = rules.match(text)
+        model = answers.get(text)
+        rows.append({
+            "text": text,
+            "rule": " → ".join(rule),
+            "gemini": " → ".join(model) if model and any(model) else "(no answer)",
+            "agree": model == rule,
+        })
+    return pd.DataFrame(rows, columns=["text", "rule", "gemini", "agree"])
