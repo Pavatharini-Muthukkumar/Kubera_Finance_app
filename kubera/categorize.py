@@ -57,23 +57,28 @@ def gemini_generator(model: str, timeout_s: int = 25, deadline_s: int = 60) -> G
 
     models = [m.strip() for m in model.split(",") if m.strip()]
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options=types.HttpOptions(timeout=timeout_s * 1000))
-    plain = types.GenerateContentConfig(response_mime_type="application/json", temperature=0)
-    fast = types.GenerateContentConfig(
-        response_mime_type="application/json",
-        temperature=0,
-        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),  # picking a label needs little thought
-    )
-    no_thinking_level: set[str] = set()  # models that reject the setting
+    def config(thinking: types.ThinkingConfig | None) -> types.GenerateContentConfig:
+        return types.GenerateContentConfig(response_mime_type="application/json", temperature=0, thinking_config=thinking)
+
+    # picking a label needs no reasoning: thinking off; models that refuse "off" get the
+    # lowest level they accept, and a model that rejects both gets its default
+    configs = [
+        config(types.ThinkingConfig(thinking_budget=0)),
+        config(types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL)),
+        config(None),
+    ]
+    first_config: dict[str, int] = {}  # model -> first setting it accepted
 
     def call(name: str, prompt: str) -> str:
-        if name not in no_thinking_level:
+        for k in range(first_config.get(name, 0), len(configs)):
             try:
-                return client.models.generate_content(model=name, contents=prompt, config=fast).text
+                text = client.models.generate_content(model=name, contents=prompt, config=configs[k]).text
+                first_config[name] = k
+                return text
             except errors.ClientError as e:
-                if e.code != 400 or "think" not in str(e).lower():
+                if e.code != 400 or "think" not in str(e).lower() or k == len(configs) - 1:
                     raise
-                no_thinking_level.add(name)
-        return client.models.generate_content(model=name, contents=prompt, config=plain).text
+        raise AssertionError("unreachable")
 
     def generate(prompt: str) -> str:
         start, last = time.monotonic(), None

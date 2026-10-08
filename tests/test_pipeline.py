@@ -285,15 +285,16 @@ def test_overloaded_model_falls_back_to_the_next_at_once(monkeypatch):
             if model == "busy":
                 raise errors.ServerError(503, {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}})
             if config.thinking_config is not None:
-                raise errors.ClientError(400, {"error": {"code": 400, "message": "thinking_level is not supported"}})
+                raise errors.ClientError(400, {"error": {"code": 400, "message": "thinking is not supported"}})
             return type("R", (), {"text": "[]"})()
 
     monkeypatch.setattr(genai, "Client", lambda **kw: type("C", (), {"models": Models()})())
     monkeypatch.setenv("GEMINI_API_KEY", "test")
     generate = gemini_generator("busy, spare")
-    assert generate("p") == "[]" and asked == ["busy", "spare", "spare"]  # 2nd 'spare' = without thinking level
+    # 'spare' refuses thinking-off and minimal, so it is asked a third time with its default
+    assert generate("p") == "[]" and asked == ["busy", "spare", "spare", "spare"]
     generate("p")
-    assert asked[-1] == "spare"  # the model that answered is tried first next time
+    assert asked[4:] == ["spare"]  # remembered: the working model and setting go straight first
 
 
 def test_bad_key_is_not_retried(monkeypatch):
